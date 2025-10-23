@@ -1,4 +1,3 @@
-# app.py
 from flask import Flask, request, jsonify
 from flasgger import Swagger
 import joblib
@@ -10,7 +9,7 @@ swagger = Swagger(app)
 # Charger le modèle
 model = joblib.load("ApkoSafe_predict.pkl")
 
-# Liste complète des features
+# Liste complète des features attendues
 expected_features = [
     "Light_Conditions_Darkness - lights lit",
     "Light_Conditions_Darkness - lights unlit",
@@ -53,7 +52,11 @@ expected_features = [
 
 @app.route('/')
 def home():
-    return "Bienvenue sur l'API de prédiction ApkoSafe"
+    return "Bienvenue sur l'API de prédiction ApkoSafe 🚦"
+
+
+# Génération automatique du schéma Swagger à partir de la liste
+properties_dict = {feature: {"type": "number", "example": 0} for feature in expected_features}
 
 
 @app.route('/predict', methods=['POST'])
@@ -73,12 +76,7 @@ def predict():
         required: true
         schema:
           type: object
-          properties:
-            {%- for feature in features %}
-            "{{ feature }}":
-              type: number
-              example: 0
-            {%- endfor %}
+          properties: {}
     responses:
       200:
         description: Résultat de la prédiction
@@ -91,13 +89,20 @@ def predict():
     """
     data = request.get_json()
 
-    # Vérification des colonnes
+    # Créer un DataFrame conforme au modèle
     input_df = pd.DataFrame([data], columns=expected_features).fillna(0)
-
     prediction = model.predict(input_df)[0]
+
     return jsonify({'prediction': str(prediction)})
 
 
+# Injection dynamique des propriétés Swagger (hack propre)
+Swagger.DEFAULT_CONFIG['specs'][0]['definitions'] = {
+    'InputData': {
+        'type': 'object',
+        'properties': properties_dict
+    }
+}
+
 if __name__ == '__main__':
-    app.jinja_env.globals.update(features=expected_features)  # pour Swagger dynamic
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True)
