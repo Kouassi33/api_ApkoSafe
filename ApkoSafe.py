@@ -2,7 +2,6 @@
 from flask import Flask, request, jsonify
 from flasgger import Swagger
 import joblib
-import numpy as np
 import pandas as pd
 
 app = Flask(__name__)
@@ -11,7 +10,7 @@ swagger = Swagger(app)
 # Charger le modèle
 model = joblib.load("ApkoSafe_predict.pkl")
 
-# Liste des colonnes attendues (selon ton modèle)
+# Liste complète des features
 expected_features = [
     "Light_Conditions_Darkness - lights lit",
     "Light_Conditions_Darkness - lights unlit",
@@ -51,6 +50,12 @@ expected_features = [
     "Vehicle_Type_Motorcycle over 500cc"
 ]
 
+
+@app.route('/')
+def home():
+    return "Bienvenue sur l'API de prédiction ApkoSafe"
+
+
 @app.route('/predict', methods=['POST'])
 def predict():
     """
@@ -58,6 +63,10 @@ def predict():
     ---
     tags:
       - Prédiction
+    consumes:
+      - application/json
+    produces:
+      - application/json
     parameters:
       - name: input_data
         in: body
@@ -65,12 +74,11 @@ def predict():
         schema:
           type: object
           properties:
-            Light_Conditions_Darkness - lights lit:
-              type: number
-              example: 1
-            Weather_Conditions_Raining no high winds:
+            {%- for feature in features %}
+            "{{ feature }}":
               type: number
               example: 0
+            {%- endfor %}
     responses:
       200:
         description: Résultat de la prédiction
@@ -83,16 +91,13 @@ def predict():
     """
     data = request.get_json()
 
-    # Créer un DataFrame avec les colonnes attendues
+    # Vérification des colonnes
     input_df = pd.DataFrame([data], columns=expected_features).fillna(0)
 
     prediction = model.predict(input_df)[0]
     return jsonify({'prediction': str(prediction)})
 
+
 if __name__ == '__main__':
+    app.jinja_env.globals.update(features=expected_features)  # pour Swagger dynamic
     app.run(debug=True)
-
-
-@app.route('/')
-def home():
-    return "Bienvenue sur l'API de prédiction ApkoSafe 🚦"
