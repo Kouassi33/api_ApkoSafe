@@ -8,10 +8,10 @@ app = Flask(__name__)
 
 # Liste complète des features attendues (one-hot / 0/1)
 expected_features = [
-    "Latitude"
-    "Longitude"
-    "Number_of_Casualties"
-    "Number_of_Vehicles"
+    "Latitude",
+    "Longitude",
+    "Number_of_Casualties",
+    "Number_of_Vehicles",
     "Light_Conditions_Darkness - lights lit",
     "Light_Conditions_Darkness - lights unlit",
     "Light_Conditions_Darkness - no lighting",
