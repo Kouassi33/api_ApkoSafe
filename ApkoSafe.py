@@ -1,15 +1,12 @@
+# app.py
 from flask import Flask, request, jsonify
-from flasgger import Swagger
+from flasgger import Swagger, swag_from
 import joblib
 import pandas as pd
 
 app = Flask(__name__)
-swagger = Swagger(app)
 
-# Charger le modèle
-model = joblib.load("ApkoSafe_predict.pkl")
-
-# Liste complète des features attendues
+# Liste complète des features attendues (one-hot / 0/1)
 expected_features = [
     "Light_Conditions_Darkness - lights lit",
     "Light_Conditions_Darkness - lights unlit",
@@ -49,60 +46,92 @@ expected_features = [
     "Vehicle_Type_Motorcycle over 500cc"
 ]
 
+# Génération automatique du schéma (properties) pour Swagger / documentation
+properties_dict = {feature: {"type": "integer", "example": 0} for feature in expected_features}
+
+# Fournir le template Swagger (utilisable par Flasgger)
+swagger_template = {
+    "swagger": "2.0",
+    "info": {
+        "title": "ApkoSafe Predict API",
+        "description": "API de prédiction de la gravité d'accident (entrée: vecteur one-hot)",
+        "version": "1.0.0"
+    },
+    "definitions": {
+        "InputData": {
+            "type": "object",
+            "properties": properties_dict,
+            # si tu veux forcer certains champs requis, ajoute "required": [...]
+        }
+    }
+}
+
+swagger = Swagger(app, template=swagger_template)
+
+# Charger le modèle (joblib ou pickle selon comment tu l'as sauvegardé)
+model = joblib.load("ApkoSafe_predict.pkl")
+
 
 @app.route('/')
 def home():
     return "Bienvenue sur l'API de prédiction ApkoSafe 🚦"
 
 
-# Génération automatique du schéma Swagger à partir de la liste
-properties_dict = {feature: {"type": "number", "example": 0} for feature in expected_features}
-
-
+# utilisation de @swag_from pour documenter l'endpoint (référence au schema défini dans "definitions")
+@swag_from({
+    "tags": ["Prédiction"],
+    "summary": "Prédire la gravité d’un accident",
+    "description": "Reçoit un objet JSON avec toutes les features encodées (0 ou 1) et renvoie la prédiction.",
+    "parameters": [
+        {
+            "name": "body",
+            "in": "body",
+            "required": True,
+            "schema": {
+                "$ref": "#/definitions/InputData"
+            }
+        }
+    ],
+    "responses": {
+        200: {
+            "description": "Résultat de la prédiction",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "prediction": {"type": "string"},
+                    "probability": {"type": "number"}
+                }
+            },
+            "examples": {
+                "application/json": {"prediction": "Severe", "probability": 0.84}
+            }
+        },
+        400: {
+            "description": "Mauvaise requête (JSON mal formé ou champs manquants)"
+        }
+    }
+})
 @app.route('/predict', methods=['POST'])
 def predict():
-    """
-    Prédiction du niveau de gravité d’un accident
-    ---
-    tags:
-      - Prédiction
-    consumes:
-      - application/json
-    produces:
-      - application/json
-    parameters:
-      - name: input_data
-        in: body
-        required: true
-        schema:
-          type: object
-          properties: {}
-    responses:
-      200:
-        description: Résultat de la prédiction
-        schema:
-          type: object
-          properties:
-            prediction:
-              type: string
-              example: "Severe"
-    """
-    data = request.get_json()
+    # Récupérer le JSON envoyé
+    data = request.get_json(force=True, silent=True)
+    if data is None:
+        return jsonify({"error": "Aucun JSON reçu ou JSON mal formé"}), 400
 
-    # Créer un DataFrame conforme au modèle
-    input_df = pd.DataFrame([data], columns=expected_features).fillna(0)
-    prediction = model.predict(input_df)[0]
+    # Construire DataFrame respectant l'ordre des colonnes attendu par le modèle
+    try:
+        input_df = pd.DataFrame([data], columns=expected_features).fillna(0)
+    except Exception as e:
+        return jsonify({"error": f"Erreur lors de la construction du DataFrame: {str(e)}"}), 400
 
-    return jsonify({'prediction': str(prediction)})
+    # Prédiction
+    try:
+        prediction = model.predict(input_df)[0]
 
+    except Exception as e:
+        return jsonify({"error": f"Erreur lors de la prédiction: {str(e)}"}), 500
 
-# Injection dynamique des propriétés Swagger (hack propre)
-Swagger.DEFAULT_CONFIG['specs'][0]['definitions'] = {
-    'InputData': {
-        'type': 'object',
-        'properties': properties_dict
-    }
-}
 
 if __name__ == '__main__':
+    # écouter toutes les interfaces (utile pour les containers / Render)
     app.run(host="0.0.0.0", port=5000, debug=True)
