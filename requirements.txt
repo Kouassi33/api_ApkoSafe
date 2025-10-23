@@ -10,3 +10,4 @@ imblearn
 xgboost
 joblib
 gunicorn
+folium
